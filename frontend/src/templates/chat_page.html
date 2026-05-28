@@ -1,10 +1,142 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<title>test</title>
-</head>
-<body>
-	<h1>hello world</h1>
-</body>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Resume Helper Chatbot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+      html, body { height: 100%; }
+      .chat-card { width: 100%; height: 90vh; display: flex; flex-direction: column; margin: 0 auto; }
+      #chatHistory { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: .5rem; }
+      .card-footer { flex: 0 0 auto; }
+      .msg { padding: .5rem .75rem; border-radius: 14px; max-width: 80%; word-break: break-word; }
+      .msg.user { background:#0d6efd; color:#fff; margin-left:auto; }
+      .msg.bot  { background:#f1f1f1; color:#000; margin-right:auto; }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid py-4">
+      <div class="card mx-auto chat-card">
+        <div class="card-header">Resume Helper Chatbot</div>
+        <div id="chatHistory" class="card-body" tabindex="0" aria-live="polite"></div>
+        <div class="card-footer">
+          <input type="file" id="fileInput" accept="application/pdf" style="display: none;" />
+
+          <form id="chatForm" class="d-flex gap-2" autocomplete="off">
+            <button type="button" id="uploadBtn" class="btn btn-outline-secondary" title="Upload PDF">+ PDF</button>
+
+            <input id="chatInput" class="form-control" placeholder="Type Here" aria-label="Message" />
+            <button type="submit" class="btn btn-primary">Send</button>
+          </form>
+          <div id="fileBadge" class="text-muted small mt-1" style="display: none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+const chatHistory = document.getElementById('chatHistory');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+
+// New elements for file handling
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+const fileBadge = document.getElementById('fileBadge');
+
+// Global variable to temporarily hold extracted PDF text
+let extractedPdfText = "";
+
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+// Trigger hidden file input when clicking the attachment button
+uploadBtn.addEventListener('click', () => fileInput.click());
+
+// Handle file selection and convert PDF to text
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file || file.type !== "application/pdf") return;
+
+  fileBadge.style.display = "block";
+  fileBadge.innerText = `📄 Extracting text from ${file.name}...`;
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+
+    // Loop through every page to extract text snippets
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(" ");
+      fullText += pageText + "\n";
+    }
+
+    extractedPdfText = fullText.trim();
+    fileBadge.className = "text-success small mt-1";
+    fileBadge.innerText = `✅ Attached: ${file.name} (${pdf.numPages} pages)`;
+  } catch (error) {
+    console.error("PDF Parsing Error:", error);
+    fileBadge.className = "text-danger small mt-1";
+    fileBadge.innerText = "❌ Failed to read PDF file.";
+    extractedPdfText = "";
+  }
+});
+
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function addMessage(text, from='bot'){
+  const row = document.createElement('div');
+  row.className = 'd-flex mb-2 ' + (from === 'user' ? 'justify-content-end' : 'justify-content-start');
+  const bubble = document.createElement('div');
+  bubble.className = 'msg ' + (from === 'user' ? 'user' : 'bot');
+  bubble.innerHTML = escapeHtml(text);
+  row.appendChild(bubble);
+  chatHistory.appendChild(row);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+chatForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const typedText = chatInput.value.trim();
+
+  // Prevent sending if there is neither text nor an attached PDF
+  if(!typedText && !extractedPdfText) return;
+
+  // 1. Build the payload that you will eventually send to your AI backend
+  let combinedPayload = "";
+  if (extractedPdfText) {
+    combinedPayload += `[Attached PDF Content]:\n${extractedPdfText}\n\n`;
+  }
+  combinedPayload += `[User Message]: ${typedText || "Analyzing attached document."}`;
+
+  // 2. What we display in the UI chat bubble (keep it clean for the user)
+  let uiDisplayMessage = typedText;
+  if (extractedPdfText && !typedText) {
+    uiDisplayMessage = "📄 Sent an attached PDF document.";
+  } else if (extractedPdfText && typedText) {
+    uiDisplayMessage = `📄 [PDF Attached] ${typedText}`;
+  }
+
+  // Display message in UI
+  addMessage(uiDisplayMessage, 'user');
+
+  // --- BACKEND NOTE ---
+  // In production, you would send 'combinedPayload' to your API via fetch().
+  // For now, the stub echo will simulate a reply using the payload.
+  setTimeout(()=> addMessage(`Echoing Payload:\n\n${combinedPayload}`, 'bot'), 500);
+
+  // Reset form and file attachments
+  chatInput.value = '';
+  fileInput.value = '';
+  extractedPdfText = "";
+  fileBadge.style.display = "none";
+});
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  </body>
 </html>
