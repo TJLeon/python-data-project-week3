@@ -9,47 +9,52 @@ import sys
 
 MODEL_NAME = "gemini-3.1-flash-lite"
 
+
 class SkillGapResult(BaseModel):
-	gaps: list[str]
+    gaps: list[str]
+
 
 def fetch_db_skills(db_url: str) -> set:
-	"""Fetch and normalize all unique skills from the jobs database."""
-	db_path = Path(db_url)
-	if not db_path.exists() or not db_path.is_file():
-		return set()
+    """Fetch and normalize all unique skills from the jobs database."""
+    db_path = Path(db_url)
+    if not db_path.exists() or not db_path.is_file():
+        return set()
 
-	try:
-		conn = sqlite3.connect(db_path)
-		cursor = conn.cursor()
-		cursor.execute("SELECT tech_stack FROM jobs WHERE tech_stack IS NOT NULL")
-		rows = cursor.fetchall()
-		conn.close()
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT tech_stack FROM jobs WHERE tech_stack IS NOT NULL")
+        rows = cursor.fetchall()
+        conn.close()
 
-		all_skills = set()
-		for row in rows:
-			if not row[0]:
-				continue
-			# Skills are comma-separated based on tag_data.py
-			skills = [s.strip().lower() for s in row[0].split(",")]
-			for skill in skills:
-				if skill:
-					all_skills.add(skill)
+        all_skills = set()
+        for row in rows:
+            if not row[0]:
+                continue
+            # Skills are comma-separated based on tag_data.py
+            skills = [s.strip().lower() for s in row[0].split(",")]
+            for skill in skills:
+                if skill:
+                    all_skills.add(skill)
 
-		return all_skills
-	except Exception as e:
-		# Handle database errors gracefully
-		print(f"Error: {e}")
-		return set()
+        return all_skills
+    except Exception as e:
+        # Handle database errors gracefully
+        print(f"Error: {e}")
+        return set()
+
 
 def extract_resume_skills_with_llm(resume_text: str, model_name: str) -> set:
-	"""
-	Extracts skills from the resume using an LLM to ensure certifications/soft skills are ignored.
-	Structured to return deterministic JSON format.
-	"""
-	# Defensive programming: simple jailbreak prevention
-	safe_resume = resume_text.replace("ignore previous instructions", "").replace("system prompt", "")
+    """
+    Extracts skills from the resume using an LLM to ensure certifications/soft skills are ignored.
+    Structured to return deterministic JSON format.
+    """
+    # Defensive programming: simple jailbreak prevention
+    safe_resume = resume_text.replace("ignore previous instructions", "").replace(
+        "system prompt", ""
+    )
 
-	prompt = f"""
+    prompt = f"""
 You are an expert technical recruiter analyzing a resume.
 Extract ALL technical hard skills, programming languages, databases, cloud providers, and frameworks.
 
@@ -63,79 +68,82 @@ Resume Text:
 {safe_resume}
 """
 
-	max_retries = 3
-	retry_delay = 1
+    max_retries = 3
+    retry_delay = 1
 
-	for attempt in range(max_retries):
-		try:
-			res = prompt_model(model_name, prompt)
+    for attempt in range(max_retries):
+        try:
+            res = prompt_model(model_name, prompt)
 
-			# Clean possible markdown from the LLM output
-			clean_res = res.replace("```json", "").replace("```", "").strip()
-			extracted_skills = json.loads(clean_res)
+            # Clean possible markdown from the LLM output
+            clean_res = res.replace("```json", "").replace("```", "").strip()
+            extracted_skills = json.loads(clean_res)
 
-			if isinstance(extracted_skills, list):
-				return set([str(skill).strip().lower() for skill in extracted_skills])
-		except Exception as e:
-			print(f"Attempt {attempt} failed: {e}")
-			print(f"Retrying in {retry_delay}s...")
-			time.sleep(retry_delay)
-			retry_delay *= 2  # Exponential backoff
+            if isinstance(extracted_skills, list):
+                return set([str(skill).strip().lower() for skill in extracted_skills])
+        except Exception as e:
+            print(f"Attempt {attempt} failed: {e}")
+            print(f"Retrying in {retry_delay}s...")
+            time.sleep(retry_delay)
+            retry_delay *= 2  # Exponential backoff
 
-	return set()
+    return set()
+
 
 def find_skill_gaps(input_file_path: str, db_url: str) -> SkillGapResult:
-	"""Main function to identify skill gaps deterministically."""
-	try:
-		# 1. Load the resume text
-		file_path = Path(input_file_path)
-		if not file_path.exists() or not file_path.is_file():
-			return SkillGapResult(gaps=[])
+    """Main function to identify skill gaps deterministically."""
+    try:
+        # 1. Load the resume text
+        file_path = Path(input_file_path)
+        if not file_path.exists() or not file_path.is_file():
+            return SkillGapResult(gaps=[])
 
-		with open(file_path, "r", encoding="utf-8") as f:
-			resume_text = f.read()
+        with open(file_path, "r", encoding="utf-8") as f:
+            resume_text = f.read()
 
-		# 2. Get unique skills from the database
-		db_skills = fetch_db_skills(db_url)
-		if not db_skills:
-			return SkillGapResult(gaps=[])
+        # 2. Get unique skills from the database
+        db_skills = fetch_db_skills(db_url)
+        if not db_skills:
+            return SkillGapResult(gaps=[])
 
-		# 3. Extract skills present in the resume
-		# Option A: Strict Regex matching (highly deterministic but might miss aliases)
-		resume_text_lower = resume_text.lower()
-		resume_skills_regex = set()
-		for skill in db_skills:
-			# Word boundary regex to ensure exact matching, avoiding substring false positives
-			pattern = r'\b' + re.escape(skill) + r'\b'
-			if re.search(pattern, resume_text_lower):
-				resume_skills_regex.add(skill)
+        # 3. Extract skills present in the resume
+        # Option A: Strict Regex matching (highly deterministic but might miss aliases)
+        resume_text_lower = resume_text.lower()
+        resume_skills_regex = set()
+        for skill in db_skills:
+            # Word boundary regex to ensure exact matching, avoiding substring false positives
+            pattern = r"\b" + re.escape(skill) + r"\b"
+            if re.search(pattern, resume_text_lower):
+                resume_skills_regex.add(skill)
 
-		# Option B: LLM extraction matching
-		resume_skills_llm = extract_resume_skills_with_llm(resume_text, MODEL_NAME)
+        # Option B: LLM extraction matching
+        resume_skills_llm = extract_resume_skills_with_llm(resume_text, MODEL_NAME)
 
-		# Combine both methods for best coverage
-		found_skills = resume_skills_regex.union(resume_skills_llm)
+        # Combine both methods for best coverage
+        found_skills = resume_skills_regex.union(resume_skills_llm)
 
-		# 4. Calculate the skill gaps
-		gaps = db_skills.difference(found_skills)
+        # 4. Calculate the skill gaps
+        gaps = db_skills.difference(found_skills)
 
-		# Sort and return as lowercased list
-		sorted_gaps = sorted(list(gaps))
+        # Sort and return as lowercased list
+        sorted_gaps = sorted(list(gaps))
 
-		return SkillGapResult(gaps=sorted_gaps)
+        return SkillGapResult(gaps=sorted_gaps)
 
-	except Exception as e:
-		# Fulfilling the requirement to handle all errors gracefully (no crashes)
-		print(f"Error: {e}")
-		return SkillGapResult(gaps=[])
+    except Exception as e:
+        # Fulfilling the requirement to handle all errors gracefully (no crashes)
+        print(f"Error: {e}")
+        return SkillGapResult(gaps=[])
+
 
 def main():
-	if len(sys.argv) != 3:
-		print("Usage: uv run find_skill_gaps.py <resume_file> <db_file>")
-		return
-	result = find_skill_gaps(sys.argv[1], sys.argv[2])
-	print(f"gaps={result.gaps}")
-	return
+    if len(sys.argv) != 3:
+        print("Usage: uv run find_skill_gaps.py <resume_file> <db_file>")
+        return
+    result = find_skill_gaps(sys.argv[1], sys.argv[2])
+    print(f"gaps={result.gaps}")
+    return
+
 
 if __name__ == "__main__":
-	main()
+    main()

@@ -124,16 +124,40 @@ chatForm.addEventListener('submit', e => {
   // Display message in UI
   addMessage(uiDisplayMessage, 'user');
 
-  // --- BACKEND NOTE ---
-  // In production, you would send 'combinedPayload' to your API via fetch().
-  // For now, the stub echo will simulate a reply using the payload.
-  setTimeout(()=> addMessage(`Echoing Payload:\n\n${combinedPayload}`, 'bot'), 500);
+// 1. Prepare the exact JSON payload structured for your backend processing
+  const payloadData = {
+    message: typedText,
+    pdf_text: extractedPdfText
+  };
 
-  // Reset form and file attachments
+  // 2. Clear out the inputs immediately so the UI feels responsive
   chatInput.value = '';
   fileInput.value = '';
   extractedPdfText = "";
   fileBadge.style.display = "none";
+
+  // 3. Send the JSON packet to your Python frontend proxy
+  fetch('/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payloadData)
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok');
+    }
+    return response.json();
+  })
+  .then(data => {
+    // 4. Extract the 'reply' key string returned by your FastAPI service
+    addMessage(data.reply, 'bot');
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    addMessage('❌ System Error: Unable to communicate with the chat server.', 'bot');
+  });
 });
     </script>
 

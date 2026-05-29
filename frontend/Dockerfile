@@ -26,4 +26,6 @@ ENV PATH="/frontend/.venv/bin:$PATH"
 #ENTRYPOINT ["ls"]
 #CMD ["-R"]
 ENTRYPOINT ["uv", "run", "uvicorn"]
-CMD ["--app-dir", "src", "--host", "0.0.0.0", "main:app"]
+CMD ["--app-dir", "src", "--host", "0.0.0.0", "--port", "8000", "main:app"]
+
+EXPOSE 8000

@@ -1,0 +1,43 @@
+services:
+  frontend:
+    image: frontend
+    pull_policy: build
+    # Build configuration points to your frontend subdirectory
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Expose the frontend service to your host machine's browser on port 8080
+    ports:
+      - "8000:8000"
+    environment:
+      # Inject the URL pointing directly to the backend's internal container service name
+      - BACKEND_URL=${BACKEND_URL}
+    networks:
+      - chat-bridge
+    # Ensures the backend starts spinning up before the frontend launches
+    depends_on:
+      - backend
+
+  backend:
+    image: backend
+    pull_policy: build
+    # Build configuration points to your backend subdirectory
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Notice: No 'ports' mapping here. The backend remains hidden from the outside internet!
+    environment:
+      # Pass your Gemini API Key safely from your host machine environment variables
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Point to the database location inside the container filesystem
+      - DATABASE_PATH=${DATABASE_PATH}
+    volumes:
+      # Mount your local SQLite jobs database file into the container data directory
+      - ./backend/data:/backend/data
+    networks:
+      - chat-bridge
+
+networks:
+  chat-bridge:
+    # Custom isolated network driver satisfies: "Do not use the host network driver"
+    driver: bridge
