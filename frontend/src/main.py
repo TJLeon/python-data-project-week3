@@ -25,7 +25,7 @@ async def forward_chat(payload: dict):
     async with httpx.AsyncClient() as client:
         try:
             # Forward the payload to the backend container
-            response = await client.post(f"{BACKEND_URL}/chat", json=payload)
+            response = await client.post(f"{BACKEND_URL}/chat", json=payload, timeout=42.0)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as exc:
